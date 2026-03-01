@@ -124,10 +124,37 @@ public class MatrixProduct {
 
         // TODO: Implement block multiplication here
 
+        for (int ii = 0; ii < m_ar; ii += blockSize)
+        {
+            for (int jj = 0; jj < m_br; jj += blockSize)
+            {
+                for (int kk = 0; kk < m_ar; kk += blockSize)
+                {
+                    for (int i = ii; i < Math.min(ii + blockSize, m_ar); i++)
+                    {
+                        for (int j = jj; j < Math.min(jj + blockSize, m_br); j++)
+                        {
+                            double sum = 0.0;
+                            for (int k = kk; k < Math.min(kk + blockSize, m_ar); k++)
+                            {
+                                sum += A[i * m_ar + k] * B[k * m_br + j];
+                            }
+                            C[i * m_br + j] += sum;
+                        }
+                    }
+                }
+            }
+        }
+
         endTime = System.nanoTime();
 
         double seconds = (endTime - startTime) / 1e9;
         System.out.printf("Time: %.3f seconds%n", seconds);
+
+        System.out.println("Result matrix:");
+        for (int j = 0; j < Math.min(10, m_br); j++)
+            System.out.print(C[j] + " ");
+        System.out.println();
     }
 
     // ==========================
