@@ -122,8 +122,6 @@ public class MatrixProduct {
 
         startTime = System.nanoTime();
 
-        // TODO: Implement block multiplication here
-
         for (int ii = 0; ii < m_ar; ii += blockSize)
         {
             for (int jj = 0; jj < m_br; jj += blockSize)
@@ -132,14 +130,12 @@ public class MatrixProduct {
                 {
                     for (int i = ii; i < Math.min(ii + blockSize, m_ar); i++)
                     {
-                        for (int j = jj; j < Math.min(jj + blockSize, m_br); j++)
+                        for (int k = kk; k < Math.min(kk + blockSize, m_ar); k++)
                         {
-                            double sum = 0.0;
-                            for (int k = kk; k < Math.min(kk + blockSize, m_ar); k++)
+                            for (int j = jj; j < Math.min(jj + blockSize, m_br); j++)
                             {
-                                sum += A[i * m_ar + k] * B[k * m_br + j];
+                                C[i * m_br + j] += A[i * m_ar + k] * B[k * m_br + j];
                             }
-                            C[i * m_br + j] += sum;
                         }
                     }
                 }
