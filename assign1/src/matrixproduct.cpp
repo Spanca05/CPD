@@ -368,6 +368,63 @@ void OnMultLineParallel_2(int m_ar, int m_br)
 }
 
 
+void OnMultLineParallel_3(int m_ar, int m_br)
+{
+    double Time1, Time2;
+
+    char st[100];
+    double temp;
+    int i, j, k;
+
+    double *pha, *phb, *phc;
+
+    pha = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phb = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phc = (double *)malloc((m_ar * m_ar) * sizeof(double));
+
+    for (i = 0; i < m_ar; i++)
+        for (j = 0; j < m_ar; j++)
+            pha[i * m_ar + j] = 1.0;
+
+    for (i = 0; i < m_br; i++)
+        for (j = 0; j < m_br; j++)
+            phb[i * m_br + j] = (double)(i + 1);
+
+    for (i = 0; i < m_br; i++)
+        for (j = 0; j < m_br; j++)
+            phc[i * m_br + j] = 0.0;
+
+    Time1 = omp_get_wtime();
+    
+    #pragma omp parallel for
+    for (i = 0; i < m_ar; i++)
+    {
+        for (k = 0; k < m_ar; k++)
+        {
+            for (j = 0; j < m_br; j++)
+            {
+                phc[i * m_ar + j] += pha[i * m_ar + k] * phb[k * m_br + j];
+            }
+        }
+    }
+
+    Time2 = omp_get_wtime();
+    snprintf(st, sizeof(st), "Time: %3.3f seconds\n", Time2 - Time1);
+    cout << st;
+
+    cout << "Result matrix: " << endl;
+    for (i = 0; i < 1; i++)
+    {
+        for (j = 0; j < min(10, m_br); j++)
+            cout << phc[j] << " ";
+    }
+    cout << endl;
+
+    free(pha);
+    free(phb);
+    free(phc);
+}
+
 // Block matrix multiplication
 void OnMultBlock(int m_ar, int m_br, int bkSize)
 {
@@ -452,6 +509,7 @@ int main(int argc, char *argv[])
         cout << "5. Multiplication Parallel 2" << endl;
         cout << "6. Line Multiplication Parallel 1" << endl;
         cout << "7. Line Multiplication Parallel 2" << endl;
+        cout << "8. Line Multiplication Parallel 3" << endl;
         cout << "0. Exit" << endl;
         cout << "Selection?: ";
         cin >> op;
@@ -487,6 +545,9 @@ int main(int argc, char *argv[])
             break;
         case 7:
             OnMultLineParallel_2(lin, col);
+            break;
+        case 8:
+            OnMultLineParallel_3(lin, col);
             break;
         }
 
