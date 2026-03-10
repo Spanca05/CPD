@@ -3,10 +3,12 @@
 #include <iomanip>
 #include <time.h>
 #include <cstdlib>
+#include <omp.h>
 
 using namespace std;
 
 #define SYSTEMTIME clock_t
+#define THREADS 4
 
 void OnMult(int m_ar, int m_br)
 {
@@ -42,6 +44,127 @@ void OnMult(int m_ar, int m_br)
                 temp += pha[i * m_ar + k] * phb[k * m_br + j];
             }
             phc[i * m_ar + j] = temp;
+        }
+    }
+
+    Time2 = clock();
+    snprintf(st, sizeof(st), "Time: %3.3f seconds\n",
+             (double)(Time2 - Time1) / CLOCKS_PER_SEC);
+    cout << st;
+
+    cout << "Result matrix: " << endl;
+    for (i = 0; i < 1; i++)
+    {
+        for (j = 0; j < min(10, m_br); j++)
+            cout << phc[j] << " ";
+    }
+    cout << endl;
+
+    free(pha);
+    free(phb);
+    free(phc);
+}
+
+void OnMultParallel_1(int m_ar, int m_br)
+{
+    SYSTEMTIME Time1, Time2;
+
+    char st[100];
+    double temp;
+    int i, j, k;
+
+    double *pha, *phb, *phc;
+
+    pha = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phb = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phc = (double *)malloc((m_ar * m_ar) * sizeof(double));
+
+    for (i = 0; i < m_ar; i++)
+        for (j = 0; j < m_ar; j++)
+            pha[i * m_ar + j] = 1.0;
+
+    for (i = 0; i < m_br; i++)
+        for (j = 0; j < m_br; j++)
+            phb[i * m_br + j] = (double)(i + 1);
+
+    omp_set_num_threads(THREADS);
+
+    Time1 = clock();
+
+    #pragma omp parallel for private(j, k, temp)
+    for (i = 0; i < m_ar; i++)
+    {
+        for (j = 0; j < m_br; j++)
+        {
+            temp = 0.0;
+            for (k = 0; k < m_ar; k++)
+            {
+                temp += pha[i * m_ar + k] * phb[k * m_br + j];
+            }
+            phc[i * m_ar + j] = temp;
+        }
+    }
+
+    Time2 = clock();
+    snprintf(st, sizeof(st), "Time: %3.3f seconds\n",
+             (double)(Time2 - Time1) / CLOCKS_PER_SEC);
+    cout << st;
+
+    cout << "Result matrix: " << endl;
+    for (i = 0; i < 1; i++)
+    {
+        for (j = 0; j < min(10, m_br); j++)
+            cout << phc[j] << " ";
+    }
+    cout << endl;
+
+    free(pha);
+    free(phb);
+    free(phc);
+}
+
+void OnMultParallel_2(int m_ar, int m_br)
+{
+    SYSTEMTIME Time1, Time2;
+
+    char st[100];
+    double temp;
+    int i, j, k;
+
+    double *pha, *phb, *phc;
+
+    pha = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phb = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phc = (double *)malloc((m_ar * m_ar) * sizeof(double));
+
+    for (i = 0; i < m_ar; i++)
+        for (j = 0; j < m_ar; j++)
+            pha[i * m_ar + j] = 1.0;
+
+    for (i = 0; i < m_br; i++)
+        for (j = 0; j < m_br; j++)
+            phb[i * m_br + j] = (double)(i + 1);
+
+    omp_set_num_threads(THREADS);
+
+    Time1 = clock();
+
+    #pragma omp parallel private(i, j) 
+    for (i = 0; i < m_ar; i++)
+    {
+        for (j = 0; j < m_br; j++)
+        {
+            #pragma omp single
+            temp = 0.0;
+
+            #pragma omp for reduction(+:temp)
+            for (k = 0; k < m_ar; k++)
+            {
+                temp += pha[i * m_ar + k] * phb[k * m_br + j];
+            }
+
+            #pragma omp single
+            phc[i * m_br + j] = temp;
         }
     }
 
@@ -206,6 +329,8 @@ int main(int argc, char *argv[])
              << "1. Multiplication" << endl;
         cout << "2. Line Multiplication" << endl;
         cout << "3. Block Multiplication" << endl;
+        cout << "4. Multiplication Parallel 1" << endl;
+        cout << "5. Multiplication Parallel 2" << endl;
         cout << "0. Exit" << endl;
         cout << "Selection?: ";
         cin >> op;
@@ -229,6 +354,12 @@ int main(int argc, char *argv[])
             cout << "Block Size? ";
             cin >> blockSize;
             OnMultBlock(lin, col, blockSize);
+            break;
+        case 4:
+            OnMultParallel_1(lin, col);
+            break;
+        case 5:
+            OnMultParallel_2(lin, col);
             break;
         }
 
