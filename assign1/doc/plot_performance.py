@@ -1,9 +1,12 @@
+import os
 import re
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-MD_FILE = "performance_values.md"
+DOC_DIR = os.path.dirname(os.path.abspath(__file__))
+os.chdir(DOC_DIR)
+MD_FILE = os.path.join(DOC_DIR, "performance_values.md")
 
 
 def parse_markdown_tables(filepath):
@@ -127,6 +130,595 @@ def save_multi_series_block_plot(df, ycol, ylabel, title, filename):
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()
+
+
+def extract_table_from_section(filepath, section_heading, language=None):
+    with open(filepath, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    start_idx = None
+    for idx, line in enumerate(lines):
+        if line.strip() == section_heading:
+            start_idx = idx
+            break
+
+    if start_idx is None:
+        return None
+
+    search_idx = start_idx + 1
+    if language is not None:
+        lang_tag = f"### {language}"
+        while search_idx < len(lines):
+            stripped = lines[search_idx].strip()
+            if stripped.startswith("## ") and search_idx > start_idx:
+                return None
+            if stripped == lang_tag:
+                search_idx += 1
+                break
+            search_idx += 1
+
+    table_start = None
+    for idx in range(search_idx, len(lines)):
+        stripped = lines[idx].strip()
+        if stripped.startswith("## ") and idx > start_idx:
+            break
+        if stripped.startswith("|"):
+            table_start = idx
+            break
+
+    if table_start is None:
+        return None
+
+    table_lines = []
+    for idx in range(table_start, len(lines)):
+        stripped = lines[idx].strip()
+        if not stripped.startswith("|"):
+            break
+        table_lines.append(stripped)
+
+    if len(table_lines) < 2:
+        return None
+
+    headers = [h.strip() for h in table_lines[0].strip("|").split("|")]
+    rows = []
+    for row in table_lines[2:]:
+        values = [v.strip() for v in row.strip("|").split("|")]
+        if len(values) == len(headers):
+            rows.append(values)
+
+    if not rows:
+        return None
+
+    return pd.DataFrame(rows, columns=headers)
+
+
+def save_requested_comparison_plot(md_file):
+    series_specs = [
+        ("## Step 1 - Standard Multiplication (i-j-k)", "C++", "Standard Multiplication (i-j-k)"),
+        ("## Step 2 - Line-by-Line Multiplication (i-k-j)", "C++", "Line-by-Line Multiplication (i-k-j)"),
+        ("## Step 1 - Standard Multiplication (i-j-k) V1", None, "Standard Multiplication (i-j-k) V1"),
+        ("## Step 2 - Standard Multiplication (i-j-k) V2", None, "Standard Multiplication (i-j-k) V2"),
+        ("## Step 3 - Line-by-Line Multiplication (i-k-j) V1", None, "Line-by-Line Multiplication (i-k-j) V1"),
+        ("## Step 4 - Line-by-Line Multiplication (i-k-j) V2", None, "Line-by-Line Multiplication (i-k-j) V2"),
+    ]
+
+    plt.figure(figsize=(10, 6))
+    plotted = 0
+
+    for section_heading, language, label in series_specs:
+        df = extract_table_from_section(md_file, section_heading, language)
+        if df is None or "Matrix Size" not in df.columns or "Time (s)" not in df.columns:
+            continue
+
+        prepared = prepare_df(df, step="comparison")
+        prepared = prepared.sort_values("N")
+        plt.plot(prepared["N"], prepared["Time (s)"], marker="o", label=label)
+        plotted += 1
+
+    if plotted == 0:
+        return
+
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("Time (s)")
+    plt.title("Time vs Matrix Size - Requested Algorithm Comparison")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_time_comparison.png")
+    plt.close()
+
+
+def save_requested_gflops_plot(md_file):
+    series_specs = [
+        ("## Step 1 - Standard Multiplication (i-j-k)", "C++", "Standard Multiplication (i-j-k)"),
+        ("## Step 2 - Line-by-Line Multiplication (i-k-j)", "C++", "Line-by-Line Multiplication (i-k-j)"),
+        ("## Step 1 - Standard Multiplication (i-j-k) V1", None, "Standard Multiplication (i-j-k) V1"),
+        ("## Step 2 - Standard Multiplication (i-j-k) V2", None, "Standard Multiplication (i-j-k) V2"),
+        ("## Step 3 - Line-by-Line Multiplication (i-k-j) V1", None, "Line-by-Line Multiplication (i-k-j) V1"),
+        ("## Step 4 - Line-by-Line Multiplication (i-k-j) V2", None, "Line-by-Line Multiplication (i-k-j) V2"),
+    ]
+
+    plt.figure(figsize=(10, 6))
+    plotted = 0
+
+    for section_heading, language, label in series_specs:
+        df = extract_table_from_section(md_file, section_heading, language)
+        if df is None or "Matrix Size" not in df.columns or "Time (s)" not in df.columns:
+            continue
+
+        prepared = prepare_df(df, step="comparison")
+        prepared = prepared.sort_values("N")
+        plt.plot(prepared["N"], prepared["GFLOPS"], marker="o", label=label)
+        plotted += 1
+
+    if plotted == 0:
+        return
+
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("GFlops")
+    plt.title("GFlops vs Matrix Size - Requested Algorithm Comparison")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_gflops_comparison.png")
+    plt.close()
+
+
+def save_requested_speedup_efficiency_plots(md_file, threads=4):
+    std_seq = extract_table_from_section(md_file, "## Step 1 - Standard Multiplication (i-j-k)", "C++")
+    line_seq = extract_table_from_section(md_file, "## Step 2 - Line-by-Line Multiplication (i-k-j)", "C++")
+    std_v1 = extract_table_from_section(md_file, "## Step 1 - Standard Multiplication (i-j-k) V1")
+    std_v2 = extract_table_from_section(md_file, "## Step 2 - Standard Multiplication (i-j-k) V2")
+    line_v1 = extract_table_from_section(md_file, "## Step 3 - Line-by-Line Multiplication (i-k-j) V1")
+    line_v2 = extract_table_from_section(md_file, "## Step 4 - Line-by-Line Multiplication (i-k-j) V2")
+
+    required = [std_seq, line_seq, std_v1, std_v2, line_v1, line_v2]
+    if any(df is None for df in required):
+        return
+
+    std_seq = prepare_df(std_seq, step="comparison")[ ["N", "Time (s)"] ].rename(columns={"Time (s)": "T_seq_std"})
+    line_seq = prepare_df(line_seq, step="comparison")[ ["N", "Time (s)"] ].rename(columns={"Time (s)": "T_seq_line"})
+    std_v1 = prepare_df(std_v1, step="comparison")[ ["N", "Time (s)"] ].rename(columns={"Time (s)": "T_std_v1"})
+    std_v2 = prepare_df(std_v2, step="comparison")[ ["N", "Time (s)"] ].rename(columns={"Time (s)": "T_std_v2"})
+    line_v1 = prepare_df(line_v1, step="comparison")[ ["N", "Time (s)"] ].rename(columns={"Time (s)": "T_line_v1"})
+    line_v2 = prepare_df(line_v2, step="comparison")[ ["N", "Time (s)"] ].rename(columns={"Time (s)": "T_line_v2"})
+
+    merged = std_seq.merge(line_seq, on="N", how="inner")
+    merged = merged.merge(std_v1, on="N", how="inner")
+    merged = merged.merge(std_v2, on="N", how="inner")
+    merged = merged.merge(line_v1, on="N", how="inner")
+    merged = merged.merge(line_v2, on="N", how="inner")
+    merged = merged.sort_values("N")
+
+    merged["Speedup Standard V1"] = merged["T_seq_std"] / merged["T_std_v1"]
+    merged["Speedup Standard V2"] = merged["T_seq_std"] / merged["T_std_v2"]
+    merged["Speedup Line V1"] = merged["T_seq_line"] / merged["T_line_v1"]
+    merged["Speedup Line V2"] = merged["T_seq_line"] / merged["T_line_v2"]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(merged["N"], merged["Speedup Standard V1"], marker="o", label="Standard V1")
+    plt.plot(merged["N"], merged["Speedup Standard V2"], marker="o", label="Standard V2")
+    plt.plot(merged["N"], merged["Speedup Line V1"], marker="o", label="Line-by-Line V1")
+    plt.plot(merged["N"], merged["Speedup Line V2"], marker="o", label="Line-by-Line V2")
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("Speedup")
+    plt.title("Speedup vs Matrix Size (4 Threads)")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_speedup_comparison.png")
+    plt.close()
+
+    merged["Efficiency Standard V1"] = merged["Speedup Standard V1"] / threads
+    merged["Efficiency Standard V2"] = merged["Speedup Standard V2"] / threads
+    merged["Efficiency Line V1"] = merged["Speedup Line V1"] / threads
+    merged["Efficiency Line V2"] = merged["Speedup Line V2"] / threads
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(merged["N"], merged["Efficiency Standard V1"], marker="o", label="Standard V1")
+    plt.plot(merged["N"], merged["Efficiency Standard V2"], marker="o", label="Standard V2")
+    plt.plot(merged["N"], merged["Efficiency Line V1"], marker="o", label="Line-by-Line V1")
+    plt.plot(merged["N"], merged["Efficiency Line V2"], marker="o", label="Line-by-Line V2")
+    plt.axhline(1.0, color="gray", linestyle="--", linewidth=1)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("Efficiency")
+    plt.title("Efficiency vs Matrix Size (4 Threads)")
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_efficiency_comparison.png")
+    plt.close()
+
+
+def load_assignment_series(md_file):
+    """Load only the six assignment series (N=1024..3072) with explicit labels."""
+    specs = [
+        ("Standard Multiplication (i-j-k)", "## Step 1 - Standard Multiplication (i-j-k)", "C++"),
+        ("Line-by-Line Multiplication (i-k-j)", "## Step 2 - Line-by-Line Multiplication (i-k-j)", "C++"),
+        ("Standard Multiplication (i-j-k) V1", "## Step 1 - Standard Multiplication (i-j-k) V1", None),
+        ("Standard Multiplication (i-j-k) V2", "## Step 2 - Standard Multiplication (i-j-k) V2", None),
+        ("Line-by-Line Multiplication (i-k-j) V1", "## Step 3 - Line-by-Line Multiplication (i-k-j) V1", None),
+        ("Line-by-Line Multiplication (i-k-j) V2", "## Step 4 - Line-by-Line Multiplication (i-k-j) V2", None),
+    ]
+
+    frames = {}
+    for label, heading, lang in specs:
+        raw = extract_table_from_section(md_file, heading, lang)
+        if raw is None:
+            continue
+        df = prepare_df(raw, step="assignment").sort_values("N")
+        df = df[df["N"].isin([1024, 1536, 2048, 2560, 3072])]
+
+        # Use Time/Thread when available for non-scaling views (time and throughput plots).
+        if "Time/Thread (s)" in df.columns:
+            effective_time = df["Time/Thread (s)"]
+        else:
+            effective_time = df["Time (s)"]
+
+        temp = df[["N", "Time (s)"]].copy()
+        temp["Effective Time (s)"] = effective_time
+        temp["GFLOPS Effective"] = (2 * (temp["N"] ** 3)) / (temp["Effective Time (s)"] * 1e9)
+        frames[label] = temp
+
+    return frames
+
+
+def save_assignment_graphs(md_file, threads=4):
+    """Generate the four required assignment graphs with explicit formulas."""
+    data = load_assignment_series(md_file)
+    required = [
+        "Standard Multiplication (i-j-k)",
+        "Line-by-Line Multiplication (i-k-j)",
+        "Standard Multiplication (i-j-k) V1",
+        "Standard Multiplication (i-j-k) V2",
+        "Line-by-Line Multiplication (i-k-j) V1",
+        "Line-by-Line Multiplication (i-k-j) V2",
+    ]
+
+    if any(k not in data for k in required):
+        return
+
+    # 1) Time vs N (all six)
+    plt.figure(figsize=(10, 6))
+    for label in required:
+        df = data[label]
+        plt.plot(df["N"], df["Effective Time (s)"], marker="o", linewidth=2, label=label)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("Time (s)")
+    plt.title("Time vs Matrix Size (Time/Thread for Parallel Series)")
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig("requested_time_comparison.png")
+    plt.close()
+
+    # 2) GFlops vs N (all six)
+    plt.figure(figsize=(10, 6))
+    for label in required:
+        df = data[label]
+        plt.plot(df["N"], df["GFLOPS Effective"], marker="o", linewidth=2, label=label)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("GFlops")
+    plt.title("GFlops vs Matrix Size (Using Time/Thread for Parallel Series)")
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig("requested_gflops_comparison.png")
+    plt.close()
+
+    seq_std = data["Standard Multiplication (i-j-k)"].rename(columns={"Time (s)": "T_seq_std"})[["N", "T_seq_std"]]
+    seq_line = data["Line-by-Line Multiplication (i-k-j)"].rename(columns={"Time (s)": "T_seq_line"})[["N", "T_seq_line"]]
+    p_std_v1 = data["Standard Multiplication (i-j-k) V1"].rename(columns={"Time (s)": "T_std_v1"})[["N", "T_std_v1"]]
+    p_std_v2 = data["Standard Multiplication (i-j-k) V2"].rename(columns={"Time (s)": "T_std_v2"})[["N", "T_std_v2"]]
+    p_line_v1 = data["Line-by-Line Multiplication (i-k-j) V1"].rename(columns={"Time (s)": "T_line_v1"})[["N", "T_line_v1"]]
+    p_line_v2 = data["Line-by-Line Multiplication (i-k-j) V2"].rename(columns={"Time (s)": "T_line_v2"})[["N", "T_line_v2"]]
+
+    merged = seq_std.merge(seq_line, on="N", how="inner")
+    merged = merged.merge(p_std_v1, on="N", how="inner")
+    merged = merged.merge(p_std_v2, on="N", how="inner")
+    merged = merged.merge(p_line_v1, on="N", how="inner")
+    merged = merged.merge(p_line_v2, on="N", how="inner")
+    merged = merged.sort_values("N")
+
+    merged["Standard V1"] = merged["T_seq_std"] / merged["T_std_v1"]
+    merged["Standard V2"] = merged["T_seq_std"] / merged["T_std_v2"]
+    merged["Line-by-Line V1"] = merged["T_seq_line"] / merged["T_line_v1"]
+    merged["Line-by-Line V2"] = merged["T_seq_line"] / merged["T_line_v2"]
+
+    # 3) Speedup vs N (four parallel variants)
+    plt.figure(figsize=(10, 6))
+    for col in ["Standard V1", "Standard V2", "Line-by-Line V1", "Line-by-Line V2"]:
+        plt.plot(merged["N"], merged[col], marker="o", linewidth=2, label=col)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("Speedup")
+    plt.title("Speedup vs Matrix Size (4 Threads)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_speedup_comparison.png")
+    plt.close()
+
+    # 4) Efficiency vs N (four parallel variants)
+    plt.figure(figsize=(10, 6))
+    for col in ["Standard V1", "Standard V2", "Line-by-Line V1", "Line-by-Line V2"]:
+        plt.plot(merged["N"], merged[col] / threads, marker="o", linewidth=2, label=col)
+    plt.axhline(1.0, color="gray", linestyle="--", linewidth=1)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("Efficiency")
+    plt.title("Efficiency vs Matrix Size (4 Threads)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_efficiency_comparison.png")
+    plt.close()
+
+
+def save_part2_cache_miss_graphs(md_file):
+    """Plot Part 2 cache misses by matrix size for Steps 1-4 only."""
+    specs = [
+        ("Standard Multiplication (i-j-k) V1", "## Step 1 - Standard Multiplication (i-j-k) V1"),
+        ("Standard Multiplication (i-j-k) V2", "## Step 2 - Standard Multiplication (i-j-k) V2"),
+        ("Line-by-Line Multiplication (i-k-j) V1", "## Step 3 - Line-by-Line Multiplication (i-k-j) V1"),
+        ("Line-by-Line Multiplication (i-k-j) V2", "## Step 4 - Line-by-Line Multiplication (i-k-j) V2"),
+    ]
+
+    series = {}
+    for label, heading in specs:
+        raw = extract_table_from_section(md_file, heading)
+        if raw is None:
+            continue
+        df = prepare_df(raw, step="part2_cache").sort_values("N")
+        df = df[df["N"].isin([1024, 1536, 2048, 2560, 3072])]
+        if "L1 Misses" in df.columns and "L2 Misses" in df.columns:
+            series[label] = df[["N", "L1 Misses", "L2 Misses"]]
+
+    if not series:
+        return
+
+    plt.figure(figsize=(10, 6))
+    for label, df in series.items():
+        plt.plot(df["N"], df["L1 Misses"], marker="o", linewidth=2, label=label)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("L1 Misses")
+    plt.title("Part 2 Cache Misses (L1) vs Matrix Size (Steps 1-4)")
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig("requested_part2_l1_misses_comparison.png")
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    for label, df in series.items():
+        plt.plot(df["N"], df["L2 Misses"], marker="o", linewidth=2, label=label)
+    plt.xlabel("Matrix Size (N)")
+    plt.ylabel("L2 Misses")
+    plt.title("Part 2 Cache Misses (L2) vs Matrix Size (Steps 1-4)")
+    plt.grid(True, alpha=0.3)
+    plt.legend(fontsize=8)
+    plt.tight_layout()
+    plt.savefig("requested_part2_l2_misses_comparison.png")
+    plt.close()
+
+
+def _load_step_thread_series(md_file, section_heading):
+    """Load a thread-scaling table with columns Number of Threads and Time (s)."""
+    raw = extract_table_from_section(md_file, section_heading)
+    if raw is None:
+        return None
+
+    if "Number of Threads" not in raw.columns or "Time (s)" not in raw.columns:
+        return None
+
+    df = raw.copy()
+    df["Threads"] = clean_numeric_series(df["Number of Threads"])
+    df["Time (s)"] = clean_numeric_series(df["Time (s)"])
+    if "Time/Thread (s)" in df.columns:
+        df["Time/Thread (s)"] = clean_numeric_series(df["Time/Thread (s)"])
+    df = df.dropna(subset=["Threads", "Time (s)"]).sort_values("Threads")
+    if df.empty:
+        return None
+
+    return df
+
+
+def save_step5_v3_thread_scaling_graphs(md_file):
+    """Create GFLOPS and speedup graphs for the current OnMultLineParallel_3 thread sweep."""
+    heading = "## Step 5 - Line-by-Line Multiplication (i-k-j) V3"
+    df = _load_step_thread_series(md_file, heading)
+    if df is None:
+        return
+
+    n = 8192
+    df["GFLOPS"] = (2 * (n ** 3)) / (df["Time (s)"] * 1e9)
+
+    base = df[df["Threads"] == 4]
+    if base.empty:
+        return
+    t4 = float(base.iloc[0]["Time (s)"])
+    df["Speedup_vs_4t"] = t4 / df["Time (s)"]
+
+    plt.figure(figsize=(9, 5))
+    plt.plot(df["Threads"], df["GFLOPS"], marker="o", linewidth=2)
+    plt.xlabel("Number of Threads")
+    plt.ylabel("GFlops")
+    plt.title("OnMultLineParallel_3 (N=8192): GFlops vs Threads")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("requested_step5_v3_gflops_vs_threads.png")
+    plt.close()
+
+    if "Time/Thread (s)" in df.columns:
+        valid = df.dropna(subset=["Time/Thread (s)"]).copy()
+        if not valid.empty:
+            valid["GFLOPS_time_per_thread"] = (2 * (n ** 3)) / (valid["Time/Thread (s)"] * 1e9)
+
+            plt.figure(figsize=(9, 5))
+            plt.plot(valid["Threads"], valid["GFLOPS_time_per_thread"], marker="o", linewidth=2)
+            plt.xlabel("Number of Threads")
+            plt.ylabel("GFlops")
+            plt.title("OnMultLineParallel_3 (N=8192): GFlops vs Threads (using Time/Thread)")
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.savefig("requested_step5_v3_gflops_vs_threads_time_per_thread.png")
+            plt.close()
+
+    plt.figure(figsize=(9, 5))
+    plt.plot(df["Threads"], df["Speedup_vs_4t"], marker="o", linewidth=2)
+    plt.axhline(1.0, color="gray", linestyle="--", linewidth=1)
+    plt.xlabel("Number of Threads")
+    plt.ylabel("Speedup (vs 4 threads)")
+    plt.title("OnMultLineParallel_3 (N=8192): Speedup vs Threads")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("requested_step5_v3_speedup_vs_threads.png")
+    plt.close()
+
+    if "Time/Thread (s)" in df.columns:
+        valid = df.dropna(subset=["Time/Thread (s)"]).copy()
+        if not valid.empty:
+            base_tp = valid[valid["Threads"] == 4]
+            if not base_tp.empty:
+                t4_tp = float(base_tp.iloc[0]["Time/Thread (s)"])
+                valid["Speedup_vs_4t_time_per_thread"] = t4_tp / valid["Time/Thread (s)"]
+
+                plt.figure(figsize=(9, 5))
+                plt.plot(valid["Threads"], valid["Speedup_vs_4t_time_per_thread"], marker="o", linewidth=2)
+                plt.axhline(1.0, color="gray", linestyle="--", linewidth=1)
+                plt.xlabel("Number of Threads")
+                plt.ylabel("Speedup (vs 4 threads)")
+                plt.title("OnMultLineParallel_3 (N=8192): Speedup vs Threads (using Time/Thread)")
+                plt.grid(True, alpha=0.3)
+                plt.tight_layout()
+                plt.savefig("requested_step5_v3_speedup_vs_threads_time_per_thread.png")
+                plt.close()
+
+                if "Time/Thread (s)" in df.columns:
+                    valid = df.dropna(subset=["Time/Thread (s)"]).copy()
+                    if not valid.empty:
+                        plt.figure(figsize=(9, 5))
+                        plt.plot(valid["Threads"], valid["Time (s)"], marker="o", linewidth=2, label="Raw Time (s)")
+                        plt.plot(valid["Threads"], valid["Time/Thread (s)"], marker="o", linewidth=2, label="Time/Thread (s)")
+                        plt.xlabel("Number of Threads")
+                        plt.ylabel("Time (s)")
+                        plt.title("OnMultLineParallel_3 (N=8192): Raw Time vs Time/Thread")
+                        plt.grid(True, alpha=0.3)
+                        plt.legend()
+                        plt.tight_layout()
+                        plt.savefig("requested_step5_v3_time_vs_time_per_thread.png")
+                        plt.close()
+
+
+def save_step5_directive_comparison_graphs(md_file):
+    """
+    Compare thread scaling across directive variants if tables exist.
+    Expected headings (if you add them to performance_values.md):
+      - ## Step 5 - Line-by-Line Multiplication (i-k-j) V3
+      - ## Step 6 - Line-by-Line Multiplication (i-k-j) V3 - for simd
+      - ## Step 7 - Line-by-Line Multiplication (i-k-j) V3 - collapse(2)
+    """
+    candidates = [
+        ("OnMultLineParallel_3", "## Step 5 - Line-by-Line Multiplication (i-k-j) V3"),
+        ("for simd", "## Step 6 - Line-by-Line Multiplication (i-k-j) V3 - for simd"),
+        ("collapse(2)", "## Step 7 - Line-by-Line Multiplication (i-k-j) V3 - collapse(2)"),
+    ]
+
+    loaded = []
+    n = 8192
+    for label, heading in candidates:
+        df = _load_step_thread_series(md_file, heading)
+        if df is None:
+            continue
+        df = df.copy()
+        df["GFLOPS"] = (2 * (n ** 3)) / (df["Time (s)"] * 1e9)
+        base = df[df["Threads"] == 4]
+        if base.empty:
+            continue
+        t4 = float(base.iloc[0]["Time (s)"])
+        df["Speedup_vs_4t"] = t4 / df["Time (s)"]
+        loaded.append((label, df))
+
+    if not loaded:
+        return
+
+    plt.figure(figsize=(10, 6))
+    for label, df in loaded:
+        plt.plot(df["Threads"], df["GFLOPS"], marker="o", linewidth=2, label=label)
+    plt.xlabel("Number of Threads")
+    plt.ylabel("GFlops")
+    plt.title("N=8192: Directive Comparison (GFlops vs Threads)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_step5_directives_gflops_vs_threads.png")
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    for label, df in loaded:
+        plt.plot(df["Threads"], df["Speedup_vs_4t"], marker="o", linewidth=2, label=label)
+    plt.axhline(1.0, color="gray", linestyle="--", linewidth=1)
+    plt.xlabel("Number of Threads")
+    plt.ylabel("Speedup (vs 4 threads)")
+    plt.title("N=8192: Directive Comparison (Speedup vs Threads)")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("requested_step5_directives_speedup_vs_threads.png")
+    plt.close()
+
+
+def save_step5_comparison_raw_vs_normalized_metrics(md_file):
+    """Compare speedup and GFlops calculated from raw time vs time/thread basis."""
+    heading = "## Step 5 - Line-by-Line Multiplication (i-k-j) V3"
+    df = _load_step_thread_series(md_file, heading)
+    if df is None:
+        return
+
+    n = 8192
+    
+    # Calculate metrics using raw time
+    df["GFLOPS_raw"] = (2 * (n ** 3)) / (df["Time (s)"] * 1e9)
+    base = df[df["Threads"] == 4]
+    if base.empty:
+        return
+    t4 = float(base.iloc[0]["Time (s)"])
+    df["Speedup_raw"] = t4 / df["Time (s)"]
+
+    # Calculate metrics using time/thread (if available)
+    if "Time/Thread (s)" in df.columns:
+        valid = df.dropna(subset=["Time/Thread (s)"]).copy()
+        if not valid.empty:
+            valid["GFLOPS_normalized"] = (2 * (n ** 3)) / (valid["Time/Thread (s)"] * 1e9)
+            base_tp = valid[valid["Threads"] == 4]
+            if not base_tp.empty:
+                t4_tp = float(base_tp.iloc[0]["Time/Thread (s)"])
+                valid["Speedup_normalized"] = t4_tp / valid["Time/Thread (s)"]
+
+                # Create comparison graph for speedup
+                plt.figure(figsize=(9, 5))
+                plt.plot(valid["Threads"], valid["Speedup_raw"], marker="o", linewidth=2, label="Speedup (Raw Time)")
+                plt.plot(valid["Threads"], valid["Speedup_normalized"], marker="s", linewidth=2, label="Speedup (Time/Thread)")
+                plt.axhline(1.0, color="gray", linestyle="--", linewidth=1)
+                plt.xlabel("Number of Threads")
+                plt.ylabel("Speedup")
+                plt.title("OnMultLineParallel_3 (N=8192): Speedup Comparison (Raw vs Time/Thread)")
+                plt.grid(True, alpha=0.3)
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig("requested_step5_comparison_speedup.png")
+                plt.close()
+
+                # Create comparison graph for GFlops
+                plt.figure(figsize=(9, 5))
+                plt.plot(valid["Threads"], valid["GFLOPS_raw"], marker="o", linewidth=2, label="GFlops (Raw Time)")
+                plt.plot(valid["Threads"], valid["GFLOPS_normalized"], marker="s", linewidth=2, label="GFlops (Time/Thread)")
+                plt.xlabel("Number of Threads")
+                plt.ylabel("GFlops")
+                plt.title("OnMultLineParallel_3 (N=8192): GFlops Comparison (Raw vs Time/Thread)")
+                plt.grid(True, alpha=0.3)
+                plt.legend()
+                plt.tight_layout()
+                plt.savefig("requested_step5_comparison_gflops.png")
+                plt.close()
 
 
 def main():
@@ -337,6 +929,13 @@ def main():
             title="Step 3 - Block Multiplication: L2 Misses vs Block Size",
             filename="step3_l2_vs_block.png"
         )
+
+    # Use an explicit assignment-focused pipeline for the requested comparison graphs.
+    save_assignment_graphs(MD_FILE, threads=4)
+    save_part2_cache_miss_graphs(MD_FILE)
+    save_step5_v3_thread_scaling_graphs(MD_FILE)
+    save_step5_directive_comparison_graphs(MD_FILE)
+    save_step5_comparison_raw_vs_normalized_metrics(MD_FILE)
 
     print("Graphs generated successfully.")
 
