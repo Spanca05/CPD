@@ -22,8 +22,20 @@ public class ChatClient {
         {
             System.out.println("Connected to server.");
 
+            Thread.startVirtualThread(() -> {
+                try {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        System.out.println();
+                        System.out.println(line);
+                        System.out.print("> ");
+                    }
+                } catch (Exception e) {
+                    System.out.println("Disconnected from server.");
+                }
+            });
+
             while (true) {
-                System.out.print("> ");
                 String message = scanner.nextLine();
 
                 if (message.equalsIgnoreCase("/quit")) {
@@ -31,9 +43,6 @@ public class ChatClient {
                 }
 
                 out.println(message);
-
-                String response = in.readLine();
-                System.out.println("Server: " + response);
             }
         } catch (Exception e) {
             System.out.println("Client error: " + e.getMessage());

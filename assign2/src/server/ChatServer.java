@@ -10,9 +10,11 @@ public class ChatServer {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
             System.out.println("Server running on port " + port);
 
+            ConnectionManager connectionManager = new ConnectionManager();
+
             while (true) {
                 Socket clientSocket = serverSocket.accept();
-                Thread.startVirtualThread(new ClientHandler(clientSocket));
+                Thread.startVirtualThread(new ClientHandler(clientSocket, connectionManager));
             }
         }
     }
