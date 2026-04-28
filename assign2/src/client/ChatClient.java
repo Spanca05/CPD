@@ -39,6 +39,7 @@ public class ChatClient {
                 String message = scanner.nextLine();
 
                 if (message.equalsIgnoreCase("/quit")) {
+                    out.println(message);
                     break;
                 }
 
