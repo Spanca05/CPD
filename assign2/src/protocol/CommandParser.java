@@ -3,6 +3,20 @@ package protocol;
 public class CommandParser {
     
     public static Command parse(String line) {
+        if (line.equals("/register") || line.startsWith("/register ")) {
+            String args = line.substring("/register".length()).trim();
+            return new Command(CommandType.REGISTER, args);
+        }
+
+        if (line.equals("/login") || line.startsWith("/login ")) {
+            String args = line.substring("/login".length()).trim();
+            return new Command(CommandType.LOGIN, args);
+        }
+
+        if (line.equals("/logout")) {
+            return new Command(CommandType.LOGOUT, null);
+        }
+
         if (line.equals("/help")) {
             return new Command(CommandType.HELP, null);
         }
