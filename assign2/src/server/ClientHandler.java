@@ -6,6 +6,8 @@ import java.io.PrintWriter;
 import java.net.Socket;
 
 import auth.AuthService;
+import auth.TokenService;
+import model.TokenInfo;
 import protocol.Command;
 import protocol.CommandParser;
 import protocol.CommandType;
@@ -13,7 +15,7 @@ import room.ChatRoom;
 import room.RoomManager;
 
 public class ClientHandler implements Runnable {
-	private final Socket clientSocket;
+    private final Socket clientSocket;
     private final RoomManager roomManager;
     private final AuthService authService;
     private ChatRoom currentRoom;
@@ -21,12 +23,16 @@ public class ClientHandler implements Runnable {
     private PrintWriter out;
     private boolean running = true;
     private boolean authenticated = false;
+    private final TokenService tokenService;
+    private String token;
 
-	public ClientHandler(Socket clientSocket, RoomManager roomManager, AuthService authService) {
-		this.clientSocket = clientSocket;
+    public ClientHandler(Socket clientSocket, RoomManager roomManager, AuthService authService,
+            TokenService tokenService) {
+        this.clientSocket = clientSocket;
         this.roomManager = roomManager;
         this.authService = authService;
-	}
+        this.tokenService = tokenService;
+    }
 
     public void sendMessage(String message) {
         if (out != null) {
@@ -34,36 +40,34 @@ public class ClientHandler implements Runnable {
         }
     }
 
-	@Override
-	public void run() {
-		try (
-            Socket socket = clientSocket;
-            BufferedReader in = new BufferedReader(
-                new InputStreamReader(socket.getInputStream())
-            );
-        ) {
+    @Override
+    public void run() {
+        try (
+                Socket socket = clientSocket;
+                BufferedReader in = new BufferedReader(
+                        new InputStreamReader(socket.getInputStream()));) {
             out = new PrintWriter(socket.getOutputStream(), true);
-            
+
             sendMessage("Welcome!");
             sendMessage("Use /register <username> <password> or /login <username> <password>.");
             sendMessage("Type /help to see all commands.");
-            
+
             String line;
-            
+
             while (running && (line = in.readLine()) != null) {
                 Command cmd = CommandParser.parse(line);
 
                 if (!authenticated &&
-                    cmd.getType() != CommandType.LOGIN &&
-                    cmd.getType() != CommandType.REGISTER &&
-                    cmd.getType() != CommandType.HELP &&
-                    cmd.getType() != CommandType.QUIT
-                ) {
+                        cmd.getType() != CommandType.LOGIN &&
+                        cmd.getType() != CommandType.REGISTER &&
+                        cmd.getType() != CommandType.RECONNECT &&
+                        cmd.getType() != CommandType.HELP &&
+                        cmd.getType() != CommandType.QUIT) {
                     sendMessage("You must login or register first.");
                     sendMessage("Use /login <username> <password> or /register <username> <password>.");
                     continue;
                 }
-                
+
                 switch (cmd.getType()) {
                     case REGISTER:
                         handleRegister(cmd.getArgument());
@@ -85,7 +89,7 @@ public class ClientHandler implements Runnable {
                     case JOIN:
                         handleJoin(cmd.getArgument());
                         break;
-                
+
                     case LEAVE:
                         handleLeave();
                         break;
@@ -98,6 +102,10 @@ public class ClientHandler implements Runnable {
                         handleQuit();
                         break;
 
+                    case RECONNECT:
+                        handleReconnect(cmd.getArgument());
+                        break;
+
                     case UNKNOWN:
                         sendMessage("Unknown command. Use /help");
                         break;
@@ -106,15 +114,15 @@ public class ClientHandler implements Runnable {
                         break;
                 }
             }
-		} catch (Exception e) {
-			System.err.println("Client handler error: " + e.getMessage());
-		} finally {
+        } catch (Exception e) {
+            System.err.println("Client handler error: " + e.getMessage());
+        } finally {
             if (currentRoom != null) {
                 currentRoom.removeClient(this);
                 currentRoom = null;
             }
         }
-	}
+    }
 
     private void handleHelp() {
         sendMessage("All commands:");
@@ -146,7 +154,9 @@ public class ClientHandler implements Runnable {
 
         currentRoom = roomManager.getOrCreateRoom(roomName);
         currentRoom.addClient(this);
+        tokenService.updateRoom(token, currentRoom.getName());
 
+        currentRoom.broadcastExcept(username + " entered the room.", this);
         sendMessage("Joined room: " + currentRoom.getName());
     }
 
@@ -158,8 +168,11 @@ public class ClientHandler implements Runnable {
 
         String roomName = currentRoom.getName();
         currentRoom.removeClient(this);
-        currentRoom = null;
 
+        currentRoom.broadcastExcept(username + " left the room.", this);
+
+        currentRoom = null;
+        tokenService.updateRoom(token, null);
         sendMessage("You left room: " + roomName);
     }
 
@@ -170,7 +183,8 @@ public class ClientHandler implements Runnable {
             return;
         }
 
-        System.out.println("From room: " + currentRoom.getName() + ", user: " + username + ", sent message: " + message);
+        System.out
+                .println("From room: " + currentRoom.getName() + ", user: " + username + ", sent message: " + message);
         currentRoom.broadcastExcept(username + ": " + message, this);
     }
 
@@ -209,10 +223,11 @@ public class ClientHandler implements Runnable {
             if (authService.register(newUsername, password)) {
                 authenticated = true;
                 username = newUsername;
+                token = tokenService.createToken(username);
                 sendMessage("Registration successful. Logged in as " + username + ".");
+                sendMessage("TOKEN " + token);
                 sendMessage("Use /join <room-name> to enter a room.");
-            }
-            else {
+            } else {
                 sendMessage("Registration failed. User may already exist.");
             }
         } catch (Exception e) {
@@ -244,10 +259,11 @@ public class ClientHandler implements Runnable {
         if (authService.login(loginUsername, password)) {
             authenticated = true;
             username = loginUsername;
+            token = tokenService.createToken(username);
+            sendMessage("TOKEN " + token);
             sendMessage("Login successful. Welcome, " + username + ".");
             sendMessage("Use /join <room-name> to enter a room.");
-        }
-        else {
+        } else {
             sendMessage("Login failed. Invalid username or password.");
         }
     }
@@ -269,5 +285,33 @@ public class ClientHandler implements Runnable {
         authenticated = false;
 
         sendMessage("Use /login <username> <password> or /register <username> <password>.");
+    }
+
+    private void handleReconnect(String token) {
+        if (authenticated) {
+            sendMessage("Already authenticated. Use /logout first.");
+            return;
+        }
+
+        TokenInfo info = tokenService.validateToken(token);
+
+        if (info == null) {
+            sendMessage("Invalid or expired token");
+        }
+
+        authenticated = true;
+        username = info.getUsername();
+
+        sendMessage("Reconnected as " + username);
+        
+        if (info.getCurrentRoomName() != null) {
+            currentRoom = roomManager.getOrCreateRoom(info.getCurrentRoomName());
+            currentRoom.addClient(this);
+
+            sendMessage("Rejoined room: " + currentRoom.getName() + ".");
+
+            currentRoom.broadcastExcept(username + " reconnected.", this);
+        }
+
     }
 }

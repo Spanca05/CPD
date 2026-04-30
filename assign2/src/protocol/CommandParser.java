@@ -38,6 +38,11 @@ public class CommandParser {
             return new Command(CommandType.QUIT, null);
         }
 
+        if (line.startsWith("/reconnect ")) {
+            String token = line.substring("/reconnect".length()).trim();
+            return new Command(CommandType.RECONNECT, token);
+        }
+
         if (line.startsWith("/")) {
             return new Command(CommandType.UNKNOWN, line);
         }

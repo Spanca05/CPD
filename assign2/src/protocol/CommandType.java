@@ -10,5 +10,6 @@ public enum CommandType {
     LEAVE,
     QUIT,
     MESSAGE,
+    RECONNECT,
     UNKNOWN
 }
