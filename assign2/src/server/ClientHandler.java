@@ -297,6 +297,7 @@ public class ClientHandler implements Runnable {
 
         if (info == null) {
             sendMessage("Invalid or expired token");
+            return;
         }
 
         authenticated = true;

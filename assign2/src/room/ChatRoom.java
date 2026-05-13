@@ -35,15 +35,21 @@ public class ChatRoom {
     }
 
     public void broadcastExcept(String message, ClientHandler sender) {
+        List<ClientHandler> recipients = new ArrayList<>();
+
         lock.lock();
         try {
             for (ClientHandler client : clients) {
-                if (client == sender)
-                    continue;
-                client.sendMessage(message);
+                if (client != sender) {
+                    recipients.add(client);
+                }
             }
         } finally {
             lock.unlock();
+        }
+
+        for (ClientHandler client : recipients) {
+            Thread.startVirtualThread(() -> client.sendMessage(message));
         }
     }
 

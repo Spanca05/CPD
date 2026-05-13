@@ -32,7 +32,7 @@ public class TokenService {
         try {
             TokenInfo info = tokens.get(token);
 
-            if (token == null || info.isExpired()) {
+            if (info == null || info.isExpired()) {
                 tokens.remove(token);
                 return null;
             }
