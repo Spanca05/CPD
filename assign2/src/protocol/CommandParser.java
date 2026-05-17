@@ -3,6 +3,8 @@ package protocol;
 public class CommandParser {
     
     public static Command parse(String line) {
+        if (line == null) return new Command(CommandType.UNKNOWN, null);
+        line = line.trim();
         if (line.equals("/register") || line.startsWith("/register ")) {
             String args = line.substring("/register".length()).trim();
             return new Command(CommandType.REGISTER, args);
@@ -28,6 +30,11 @@ public class CommandParser {
         if (line.equals("/join") || line.startsWith("/join ")) {
             String roomName = line.substring("/join".length()).trim();
             return new Command(CommandType.JOIN, roomName);
+        }
+
+        if (line.equals("/airoom") || line.startsWith("/airoom ")) {
+            String args = line.substring("/airoom".length()).trim();
+            return new Command(CommandType.AIROOM, args);
         }
 
         if (line.equals("/leave")) {

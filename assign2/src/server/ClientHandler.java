@@ -7,6 +7,7 @@ import java.net.Socket;
 
 import auth.AuthService;
 import auth.TokenService;
+import ai.OllamaClient;
 import model.TokenInfo;
 import protocol.Command;
 import protocol.CommandParser;
@@ -25,6 +26,7 @@ public class ClientHandler implements Runnable {
     private boolean authenticated = false;
     private final TokenService tokenService;
     private String token;
+    private final OllamaClient ollamaClient = OllamaClient.createDefault();
 
     public ClientHandler(Socket clientSocket, RoomManager roomManager, AuthService authService,
             TokenService tokenService) {
@@ -90,6 +92,10 @@ public class ClientHandler implements Runnable {
                         handleJoin(cmd.getArgument());
                         break;
 
+                    case AIROOM:
+                        handleAiRoom(cmd.getArgument());
+                        break;
+
                     case LEAVE:
                         handleLeave();
                         break;
@@ -130,6 +136,7 @@ public class ClientHandler implements Runnable {
         sendMessage("/login <username> <password>    - login");
         sendMessage("/logout                         - logout current user");
         sendMessage("/join <room>                    - join or create a room");
+        sendMessage("/airoom <room> [prompt]         - create AI room with optional prompt and join");
         sendMessage("/leave                          - leave current room");
         sendMessage("/rooms                          - list available rooms");
         sendMessage("/quit                           - exit");
@@ -186,6 +193,67 @@ public class ClientHandler implements Runnable {
         System.out
                 .println("From room: " + currentRoom.getName() + ", user: " + username + ", sent message: " + message);
         currentRoom.broadcastExcept(username + ": " + message, this);
+
+        if (currentRoom.isAiRoom()) {
+            try {
+                StringBuilder ctx = new StringBuilder();
+
+                String prompt = currentRoom.getPrompt();
+                if (prompt != null && !prompt.isBlank()) {
+                    ctx.append(prompt).append("\n");
+                }
+
+                for (String h : currentRoom.getHistory()) {
+                    ctx.append(h).append("\n");
+                }
+
+                String context = ctx.toString();
+
+                boolean started = currentRoom.startAiRequestIfIdle(context);
+                if (started) {
+                    submitAiRequest(context);
+                } 
+            } catch (Exception e) {
+                currentRoom.broadcast("Bot: Sorry, AI unavailable.");
+            }
+        }
+    }
+
+    private void submitAiRequest(String context) {
+        ollamaClient.generate(context).thenAccept(resp -> {
+            String reply = resp;
+
+            int idx = resp.indexOf("\"text\":");
+            if (idx >= 0) {
+                int start = resp.indexOf('"', idx + 7);
+                if (start >= 0) {
+                    start++;
+                    int end = resp.indexOf('"', start);
+                    if (end > start) {
+                        reply = resp.substring(start, end);
+                    }
+                }
+            }
+
+            int reponse_start = reply.indexOf("\"response\":") + 12;
+            int reponse_end = reply.indexOf("\"done\":")-1;
+            String reponse_reply = reply.substring(reponse_start, reponse_end);
+            String botMsg = "Bot: " + reponse_reply;
+            currentRoom.broadcast(botMsg);
+
+            String next = currentRoom.finishAiRequestAndGetPending();
+            if (next != null) {
+                submitAiRequest(next);
+            }
+        }).exceptionally(ex -> {
+            currentRoom.broadcast("Bot: Sorry, AI unavailable.");
+
+            String next = currentRoom.finishAiRequestAndGetPending();
+            if (next != null) {
+                submitAiRequest(next);
+            }
+            return null;
+        });
     }
 
     private void handleQuit() {
@@ -307,6 +375,7 @@ public class ClientHandler implements Runnable {
         
         if (info.getCurrentRoomName() != null) {
             currentRoom = roomManager.getOrCreateRoom(info.getCurrentRoomName());
+
             currentRoom.addClient(this);
 
             sendMessage("Rejoined room: " + currentRoom.getName() + ".");
@@ -314,5 +383,61 @@ public class ClientHandler implements Runnable {
             currentRoom.broadcastExcept(username + " reconnected.", this);
         }
 
+    }
+
+    private void handleAiRoom(String args) {
+        if (currentRoom != null) {
+            sendMessage("You are already in room: " + currentRoom.getName());
+            sendMessage("Use /leave before joining another room.");
+            return;
+        }
+
+        if (args == null || args.isBlank()) {
+            sendMessage("Usage: /airoom <room-name> [prompt]");
+            return;
+        }
+
+        String[] parts = args.trim().split(" ", 2);
+
+        String roomName = parts[0].trim();
+        if (roomName.isBlank()) {
+            sendMessage("Usage: /airoom <room-name> [prompt]");
+            return;
+        }
+
+        String prompt = null;
+        if (parts.length >= 2 && !parts[1].isBlank()) {
+            prompt = parts[1].trim();
+        }
+
+        ChatRoom room = roomManager.createAiRoom(roomName, prompt);
+
+        currentRoom = room;
+
+        currentRoom.addClient(this);
+
+        tokenService.updateRoom(token, currentRoom.getName());
+
+        currentRoom.broadcastExcept(username + " entered the room.", this);
+        sendMessage("Created and joined AI room: " + currentRoom.getName());
+
+        if (prompt != null && !prompt.isBlank()) {
+            try {
+                StringBuilder ctx = new StringBuilder();
+                ctx.append(prompt).append("\n");
+
+                for (String h : currentRoom.getHistory()) {
+                    ctx.append(h).append("\n");
+                }
+
+                String context = ctx.toString();
+                boolean started = currentRoom.startAiRequestIfIdle(context);
+                if (started) {
+                    submitAiRequest(context);
+                }
+            } catch (Exception e) {
+                currentRoom.broadcast("Bot: Sorry, AI unavailable.");
+            }
+        }
     }
 }

@@ -11,5 +11,6 @@ public enum CommandType {
     QUIT,
     MESSAGE,
     RECONNECT,
+    AIROOM,
     UNKNOWN
 }
