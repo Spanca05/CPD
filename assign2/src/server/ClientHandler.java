@@ -74,12 +74,15 @@ public class ClientHandler implements Runnable {
                     case REGISTER:
                         handleRegister(cmd.getArgument());
                         break;
+
                     case LOGIN:
                         handleLogin(cmd.getArgument());
                         break;
+
                     case LOGOUT:
                         handleLogout();
                         break;
+
                     case HELP:
                         handleHelp();
                         break;
@@ -208,52 +211,68 @@ public class ClientHandler implements Runnable {
                 }
 
                 String context = ctx.toString();
+                ChatRoom room = currentRoom; // Capture room reference for async callback
 
-                boolean started = currentRoom.startAiRequestIfIdle(context);
+                boolean started = room.startAiRequestIfIdle(context);
                 if (started) {
-                    submitAiRequest(context);
-                } 
+                    submitAiRequest(room, context);
+                }
             } catch (Exception e) {
                 currentRoom.broadcast("Bot: Sorry, AI unavailable.");
             }
         }
     }
 
-    private void submitAiRequest(String context) {
+    private void submitAiRequest(ChatRoom room, String context) {
         ollamaClient.generate(context).thenAccept(resp -> {
-            String reply = resp;
+            try {
+                String botResponse = extractResponseFromJson(resp);
+                String botMsg = "Bot: " + botResponse;
+                room.broadcast(botMsg);
 
-            int idx = resp.indexOf("\"text\":");
-            if (idx >= 0) {
-                int start = resp.indexOf('"', idx + 7);
-                if (start >= 0) {
-                    start++;
-                    int end = resp.indexOf('"', start);
-                    if (end > start) {
-                        reply = resp.substring(start, end);
-                    }
+                String next = room.finishAiRequestAndGetPending();
+                if (next != null) {
+                    submitAiRequest(room, next);
                 }
-            }
-
-            int reponse_start = reply.indexOf("\"response\":") + 12;
-            int reponse_end = reply.indexOf("\"done\":")-1;
-            String reponse_reply = reply.substring(reponse_start, reponse_end);
-            String botMsg = "Bot: " + reponse_reply;
-            currentRoom.broadcast(botMsg);
-
-            String next = currentRoom.finishAiRequestAndGetPending();
-            if (next != null) {
-                submitAiRequest(next);
+            } catch (Exception e) {
+                room.broadcast("Bot: Error parsing response.");
+                room.finishAiRequestAndGetPending();
             }
         }).exceptionally(ex -> {
-            currentRoom.broadcast("Bot: Sorry, AI unavailable.");
-
-            String next = currentRoom.finishAiRequestAndGetPending();
-            if (next != null) {
-                submitAiRequest(next);
-            }
+            room.broadcast("Bot: Sorry, AI unavailable.");
+            room.finishAiRequestAndGetPending();
             return null;
         });
+    }
+
+    private String extractResponseFromJson(String json) throws Exception {
+        int responseIdx = json.indexOf("\"response\":");
+        if (responseIdx < 0) {
+            throw new Exception("No response field in JSON");
+        }
+
+        int start = json.indexOf('"', responseIdx + 11);
+        if (start < 0) {
+            throw new Exception("Invalid JSON format");
+        }
+
+        int end = start + 1;
+        while (end < json.length()) {
+            if (json.charAt(end) == '"' && json.charAt(end - 1) != '\\') {
+                break;
+            }
+            end++;
+        }
+
+        if (end >= json.length()) {
+            throw new Exception("Unclosed string in JSON");
+        }
+
+        String response = json.substring(start + 1, end);
+
+        response = response.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\");
+
+        return response.trim();
     }
 
     private void handleQuit() {
@@ -372,7 +391,7 @@ public class ClientHandler implements Runnable {
         username = info.getUsername();
 
         sendMessage("Reconnected as " + username);
-        
+
         if (info.getCurrentRoomName() != null) {
             currentRoom = roomManager.getOrCreateRoom(info.getCurrentRoomName());
 
@@ -431,9 +450,9 @@ public class ClientHandler implements Runnable {
                 }
 
                 String context = ctx.toString();
-                boolean started = currentRoom.startAiRequestIfIdle(context);
+                boolean started = room.startAiRequestIfIdle(context);
                 if (started) {
-                    submitAiRequest(context);
+                    submitAiRequest(room, context);
                 }
             } catch (Exception e) {
                 currentRoom.broadcast("Bot: Sorry, AI unavailable.");

@@ -20,7 +20,7 @@ public class ChatRoom {
     private final int maxHistory = 200;
 
     private boolean aiRequestInFlight = false;
-    private String pendingAiContext = null;
+    private final Deque<String> pendingAiRequests = new ArrayDeque<>();
 
     public ChatRoom(String name) {
         this.name = name;
@@ -90,7 +90,7 @@ public class ChatRoom {
         addMessageToHistory(message);
     }
 
-    public List<String> getHistorySnapshot() {
+    private List<String> getHistorySnapshot() {
         lock.lock();
         try {
             return new ArrayList<>(messages);
@@ -151,7 +151,7 @@ public class ChatRoom {
     public boolean startAiRequestIfIdle(String context) {
         synchronized (this) {
             if (aiRequestInFlight) {
-                pendingAiContext = context;
+                pendingAiRequests.addLast(context); 
                 return false;
             } else {
                 aiRequestInFlight = true;
@@ -162,9 +162,8 @@ public class ChatRoom {
 
     public String finishAiRequestAndGetPending() {
         synchronized (this) {
-            if (pendingAiContext != null) {
-                String next = pendingAiContext;
-                pendingAiContext = null;
+            if (!pendingAiRequests.isEmpty()) {
+                String next = pendingAiRequests.removeFirst(); 
                 return next;
             } else {
                 aiRequestInFlight = false;

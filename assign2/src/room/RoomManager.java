@@ -56,20 +56,9 @@ public class RoomManager {
     }
 
     public ChatRoom createAiRoom(String name, String prompt) {
-        lock.lock();
-        try {
-            ChatRoom room = rooms.get(name);
-
-            if (room == null) {
-                room = new ChatRoom(name);
-                rooms.put(name, room);
-            }
-
-            room.setAiRoom(true, prompt);
-            return room;
-        } finally {
-            lock.unlock();
-        }
+        ChatRoom room = getOrCreateRoom(name);
+        room.setAiRoom(true, prompt);
+        return room;
     }
 
 }
