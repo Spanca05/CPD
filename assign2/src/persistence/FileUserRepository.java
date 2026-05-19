@@ -8,6 +8,8 @@ import java.util.List;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import auth.PasswordService;
+
 public class FileUserRepository implements UserRepository {
     private final Path filePath;
     private final Lock lock = new ReentrantLock();
@@ -66,9 +68,11 @@ public class FileUserRepository implements UserRepository {
                 throw new RuntimeException("User already exists.");
             }
 
+                String passwordValue = PasswordService.hashPassword(password);
+
             Files.writeString(
                     filePath,
-                    username.trim() + ":" + password.trim() + System.lineSeparator(),
+                    username.trim() + ":" + passwordValue + System.lineSeparator(),
                     StandardOpenOption.APPEND);
 
         } catch (Exception e) {
@@ -94,9 +98,13 @@ public class FileUserRepository implements UserRepository {
                 if (tokens.length < 2) continue;
 
                 String storedUsername = tokens[0].trim();
-                String storedPassword = tokens[1].trim();
+                String storedHash = tokens[1].trim();
 
-                if (username.equals(storedUsername) && password.equals(storedPassword)) {
+                if (!username.equals(storedUsername)) {
+                    continue;
+                }
+
+                if (PasswordService.verifyPassword(password, storedHash)) {
                     return true;
                 }
             }

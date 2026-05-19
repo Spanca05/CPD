@@ -21,6 +21,7 @@ public class ChatRoom {
 
     private boolean aiRequestInFlight = false;
     private final Deque<String> pendingAiRequests = new ArrayDeque<>();
+    private final ReentrantLock aiLock = new ReentrantLock();
 
     public ChatRoom(String name) {
         this.name = name;
@@ -149,7 +150,8 @@ public class ChatRoom {
     }
 
     public boolean startAiRequestIfIdle(String context) {
-        synchronized (this) {
+        aiLock.lock();
+        try {
             if (aiRequestInFlight) {
                 pendingAiRequests.addLast(context); 
                 return false;
@@ -157,11 +159,14 @@ public class ChatRoom {
                 aiRequestInFlight = true;
                 return true;
             }
+        } finally {
+            aiLock.unlock();
         }
     }
 
     public String finishAiRequestAndGetPending() {
-        synchronized (this) {
+        aiLock.lock();
+        try {
             if (!pendingAiRequests.isEmpty()) {
                 String next = pendingAiRequests.removeFirst(); 
                 return next;
@@ -169,6 +174,8 @@ public class ChatRoom {
                 aiRequestInFlight = false;
                 return null;
             }
+        } finally {
+            aiLock.unlock();
         }
     }
 
