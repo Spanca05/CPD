@@ -1,89 +1,55 @@
 package room;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
 import java.util.List;
-import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import server.ClientHandler;
+import utils.ThreadSafeList;
+import utils.ThreadSafeQueue;
 
 public class ChatRoom {
-    private String name;
-    private List<ClientHandler> clients = new ArrayList<>();
-    private final ReentrantLock lock = new ReentrantLock();
+    private final String name;
+    private final ThreadSafeList<ClientHandler> clients = new ThreadSafeList<>();
 
-    private boolean aiRoom = false;
-    private String prompt = null;
+    private volatile boolean aiRoom = false;
+    private volatile String prompt = null;
 
-    private final Deque<String> messages = new ArrayDeque<>();
+    private final ThreadSafeQueue<String> messages = new ThreadSafeQueue<>();
     private final int maxHistory = 200;
 
-    private boolean aiRequestInFlight = false;
-    private final Deque<String> pendingAiRequests = new ArrayDeque<>();
-    private final ReentrantLock aiLock = new ReentrantLock();
+    private final AtomicBoolean aiRequestInFlight = new AtomicBoolean(false);
+    private final ThreadSafeQueue<String> pendingAiRequests = new ThreadSafeQueue<>();
 
     public ChatRoom(String name) {
         this.name = name;
     }
 
     public boolean isAiRoom() {
-        lock.lock();
-        try {
-            return aiRoom;
-        } finally {
-            lock.unlock();
-        }
+        return aiRoom;
     }
 
     public void setAiRoom(boolean ai, String prompt) {
-        lock.lock();
-        try {
-            this.aiRoom = ai;
-            this.prompt = prompt;
-        } finally {
-            lock.unlock();
-        }
+        this.aiRoom = ai;
+        this.prompt = prompt;
     }
 
     public String getPrompt() {
-        lock.lock();
-        try {
-            return prompt;
-        } finally {
-            lock.unlock();
-        }
+        return prompt;
     }
 
     public void addClient(ClientHandler client) {
-        lock.lock();
-        try {
-            clients.add(client);
-        } finally {
-            lock.unlock();
-        }
-
+        clients.add(client);
         sendHistoryTo(client);
     }
 
     public void removeClient(ClientHandler client) {
-        lock.lock();
-        try {
-            clients.remove(client);
-        } finally {
-            lock.unlock();
-        }
+        clients.remove(client);
     }
 
     private void addMessageToHistory(String message) {
-        lock.lock();
-        try {
-            messages.addLast(message);
-            while (messages.size() > maxHistory) {
-                messages.removeFirst();
-            }
-        } finally {
-            lock.unlock();
+        messages.addLast(message);
+        while (messages.size() > maxHistory) {
+            messages.removeFirst();
         }
     }
 
@@ -92,12 +58,7 @@ public class ChatRoom {
     }
 
     private List<String> getHistorySnapshot() {
-        lock.lock();
-        try {
-            return new ArrayList<>(messages);
-        } finally {
-            lock.unlock();
-        }
+        return messages.snapshot();
     }
 
     public List<String> getHistory() {
@@ -114,35 +75,19 @@ public class ChatRoom {
     public void broadcastExcept(String message, ClientHandler sender) {
         addMessageToHistory(message);
 
-        List<ClientHandler> recipients = new ArrayList<>();
-
-        lock.lock();
-        try {
-            for (ClientHandler client : clients) {
-                if (client != sender) {
-                    recipients.add(client);
-                }
-            }
-        } finally {
-            lock.unlock();
-        }
+        List<ClientHandler> recipients = clients.snapshot();
 
         for (ClientHandler client : recipients) {
-            Thread.startVirtualThread(() -> client.sendMessage(message));
+            if (client != sender) {
+                Thread.startVirtualThread(() -> client.sendMessage(message));
+            }
         }
     }
 
     public void broadcast(String message) {
         addMessageToHistory(message);
 
-        List<ClientHandler> recipients = new ArrayList<>();
-
-        lock.lock();
-        try {
-            recipients.addAll(clients);
-        } finally {
-            lock.unlock();
-        }
+        List<ClientHandler> recipients = clients.snapshot();
 
         for (ClientHandler client : recipients) {
             Thread.startVirtualThread(() -> client.sendMessage(message));
@@ -150,32 +95,21 @@ public class ChatRoom {
     }
 
     public boolean startAiRequestIfIdle(String context) {
-        aiLock.lock();
-        try {
-            if (aiRequestInFlight) {
-                pendingAiRequests.addLast(context); 
-                return false;
-            } else {
-                aiRequestInFlight = true;
-                return true;
-            }
-        } finally {
-            aiLock.unlock();
+        boolean wasInFlight = aiRequestInFlight.getAndSet(true);
+        if (wasInFlight) {
+            pendingAiRequests.addLast(context);
+            return false;
+        } else {
+            return true;
         }
     }
 
     public String finishAiRequestAndGetPending() {
-        aiLock.lock();
-        try {
-            if (!pendingAiRequests.isEmpty()) {
-                String next = pendingAiRequests.removeFirst(); 
-                return next;
-            } else {
-                aiRequestInFlight = false;
-                return null;
-            }
-        } finally {
-            aiLock.unlock();
+        if (!pendingAiRequests.isEmpty()) {
+            return pendingAiRequests.removeFirst();
+        } else {
+            aiRequestInFlight.set(false);
+            return null;
         }
     }
 
