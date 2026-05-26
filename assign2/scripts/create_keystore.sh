@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KEYSTORE_PATH="assign2/keystore.jks"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+
+KEYSTORE_PATH="$ROOT_DIR/assign2/keystore.jks"
 STOREPASS="changeit"
 KEYPASS="changeit"
 
