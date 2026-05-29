@@ -2,9 +2,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-KEYSTORE_PATH="$ROOT_DIR/assign2/keystore.jks"
+KEYSTORE_PATH="$ROOT_DIR/keystore.jks"
 STOREPASS="changeit"
 KEYPASS="changeit"
 

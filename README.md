@@ -9,24 +9,24 @@ Group members:
 
 ## Run server and client for Project 2 (local testing)
 
-You can generate a self-signed keystore and run the server/client using the helper scripts in `assign2/src/scripts/`.
+You can generate a self-signed keystore and run the server/client using the helper scripts in `src/scripts/`.
 
 - Create keystore (if not present):
 
 ```bash
-bash assign2/src/scripts/create_keystore.sh
+bash scripts/create_keystore.sh
 ```
 
 - Start server (compiles sources then runs):
 
 ```bash
-bash assign2/src/scripts/run_server.sh
+bash scripts/run_server.sh
 ```
 
 - Start client (compiles sources then runs):
 
 ```bash
-bash assign2/src/scripts/run_client.sh 192.168.1.10
+bash scripts/run_client.sh 192.168.1.10
 ```
 
 The scripts create `assign2/keystore.jks` (password `changeit`) and use it for both server keystore and client truststore for local testing.

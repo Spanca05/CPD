@@ -2,10 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT_DIR"
 
-TRUSTSTORE_PATH="$ROOT_DIR/assign2/keystore.jks"
+TRUSTSTORE_PATH="$ROOT_DIR/keystore.jks"
 STOREPASS="changeit"
 
 if [ ! -f "$TRUSTSTORE_PATH" ]; then
@@ -14,11 +14,11 @@ if [ ! -f "$TRUSTSTORE_PATH" ]; then
 fi
 
 echo "Compiling Java sources (if needed)..."
-rm -rf assign2/out || true
-mkdir -p assign2/out
-javac -d assign2/out $(find assign2/src -name "*.java")
+rm -rf out || true
+mkdir -p out
+javac -d out $(find src -name "*.java")
 
 echo "Starting client with truststore $TRUSTSTORE_PATH"
 java -Djavax.net.ssl.trustStore="$TRUSTSTORE_PATH" \
   -Djavax.net.ssl.trustStorePassword="$STOREPASS" \
-  -cp assign2/out client.ChatClient "$@"
+  -cp out client.ChatClient "$@"
