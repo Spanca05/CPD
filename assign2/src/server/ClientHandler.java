@@ -4,6 +4,8 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import auth.AuthService;
 import auth.TokenService;
@@ -27,7 +29,7 @@ public class ClientHandler implements Runnable {
     private final TokenService tokenService;
     private String token;
     private final OllamaClient ollamaClient = OllamaClient.createDefault();
-    private final Object outLock = new Object();
+    private final Lock outLock = new ReentrantLock();
 
     public ClientHandler(Socket clientSocket, RoomManager roomManager, AuthService authService,
             TokenService tokenService) {
@@ -38,19 +40,21 @@ public class ClientHandler implements Runnable {
     }
 
     public void sendMessage(String message) {
-        synchronized (outLock) {
+        outLock.lock();
+        try {
             if (out != null) {
                 out.println(message);
             }
+        } finally {
+            outLock.unlock();
         }
     }
 
     @Override
     public void run() {
         try (
-                Socket socket = clientSocket;
-                BufferedReader in = new BufferedReader(
-                        new InputStreamReader(socket.getInputStream()));) {
+        Socket socket = clientSocket;
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));) {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             sendMessage("Welcome!");
@@ -173,7 +177,7 @@ public class ClientHandler implements Runnable {
 
         if (roomName == null || roomName.isBlank()) {
             sendMessage("Usage: /join <room-name>");
-            sendMessage("Available rooms: " + roomManager.listRooms());
+            handleRooms();
             return;
         }
 
@@ -204,7 +208,7 @@ public class ClientHandler implements Runnable {
     private void handleMessage(String message) {
         if (currentRoom == null) {
             sendMessage("You must join a room before sending messages. Use: /join <room-name>");
-            sendMessage("Available rooms: " + roomManager.listRooms());
+            handleRooms();
             return;
         }
 
@@ -327,6 +331,11 @@ public class ClientHandler implements Runnable {
             currentRoom = null;
         }
 
+        if (token != null) {
+            tokenService.removeToken(token);
+            token = null;
+        }
+
         sendMessage("Goodbye. See you next time :)");
         running = false;
     }
@@ -413,6 +422,11 @@ public class ClientHandler implements Runnable {
         }
 
         sendMessage("Logged out from " + username + ".");
+
+        if (token != null) {
+            tokenService.removeToken(token);
+            token = null;
+        }
 
         username = null;
         authenticated = false;

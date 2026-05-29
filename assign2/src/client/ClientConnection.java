@@ -5,9 +5,14 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import utils.SSLUtils;
 
 public class ClientConnection {
+    private static final Path TOKEN_FILE = Path.of(System.getProperty("user.home"), ".cpd_chat_token");
+
     private final String host;
     private final int port;
 
@@ -20,6 +25,7 @@ public class ClientConnection {
     public ClientConnection(String host, int port) {
         this.host = host;
         this.port = port;
+        this.token = loadTokenFromDisk();
     }
 
     public void connect() throws IOException {
@@ -77,9 +83,49 @@ public class ClientConnection {
 
     public void setToken(String token) {
         this.token = token;
+        persistToken(token);
     }
 
     public boolean hasToken() {
         return token != null && !token.isBlank();
+    }
+
+    public String getToken() {
+        return token;
+    }
+
+    public void clearToken() {
+        token = null;
+
+        try {
+            Files.deleteIfExists(TOKEN_FILE);
+        } catch (IOException ignored) {
+        }
+    }
+
+    private String loadTokenFromDisk() {
+        try {
+            if (Files.exists(TOKEN_FILE)) {
+                String stored = Files.readString(TOKEN_FILE, StandardCharsets.UTF_8).trim();
+                if (!stored.isBlank()) {
+                    return stored;
+                }
+            }
+        } catch (IOException ignored) {
+        }
+
+        return null;
+    }
+
+    private void persistToken(String token) {
+        try {
+            if (token == null || token.isBlank()) {
+                Files.deleteIfExists(TOKEN_FILE);
+                return;
+            }
+
+            Files.writeString(TOKEN_FILE, token.trim(), StandardCharsets.UTF_8);
+        } catch (IOException ignored) {
+        }
     }
 }

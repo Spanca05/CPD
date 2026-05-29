@@ -27,12 +27,21 @@ public class ChatClient {
             printBanner();
             printSystem("Connected to server.", GREEN);
 
+            if (connection.hasToken()) {
+                printSystem("Saved token found. Attempting reconnect...", YELLOW);
+                connection.send("/reconnect " + connection.getToken());
+            }
+
             Thread.startVirtualThread(() -> {
                 while (true) {
                     try {
                         String line;
 
                         while ((line = connection.readLine()) != null) {
+                            if (line.startsWith("Invalid or expired token")) {
+                                connection.clearToken();
+                            }
+
                             if (line.startsWith("TOKEN ")) {
                                 String token = line.substring("TOKEN ".length()).trim();
                                 connection.setToken(token);
@@ -47,10 +56,7 @@ public class ChatClient {
                     } catch (IOException e) {
                         printSystem("Connection lost.", RED);
 
-                        if (!connection.hasToken()) {
-                            printSystem("No token available. Please login again.", YELLOW);
-                            break;
-                        }
+                        if (!connection.hasToken()) break;
 
                         try {
                             printSystem("Reconnecting...", YELLOW);
@@ -69,10 +75,12 @@ public class ChatClient {
             while (true) {
                 String message = scanner.nextLine();
                 if (message.equalsIgnoreCase("/quit")) {
+                    connection.clearToken();
                     printOutgoing("/quit");
                     connection.send(message);
                     break;
                 }
+
 
                 if (message.equalsIgnoreCase("/disconnect")) {
                     printSystem("Disconnected from server.", YELLOW);
