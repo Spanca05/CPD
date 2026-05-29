@@ -149,7 +149,19 @@ public class ClientHandler implements Runnable {
     }
 
     private void handleRooms() {
-        sendMessage("Available rooms: " + roomManager.listRooms());
+        String msg = "Available rooms:";
+        String roomMsg = "";
+        for (ChatRoom room : roomManager.getRooms()) {
+            roomMsg += room.getName();
+            if (room.isAiRoom()) {
+                roomMsg += " (ai room)";
+            }
+
+            msg += " " + roomMsg + " ";
+            roomMsg = "";
+        }
+
+        sendMessage(msg);
     }
 
     private void handleJoin(String roomName) {
