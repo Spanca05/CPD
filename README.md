@@ -31,11 +31,22 @@ bash scripts/run_client.sh 192.168.1.10
 
 The scripts create `assign2/keystore.jks` (password `changeit`) and use it for both server keystore and client truststore for local testing.
 
-# CPD Projects
+## Run across 2 PCs
 
-CPD Projects of group T&lt;11&gt;G&lt;13&gt;.
+1. On PC 1, start the server:
 
-Group members:
+```bash
+cd assign2
+bash scripts/run_server.sh
+```
 
-1. &lt;Vasco&gt; &lt;Vieira&gt; (&lt;up202307797@up.pt&gt;)
-2. &lt;Leonardo&gt; &lt;Carvalho&gt; (&lt;up202307152@up.pt&gt;)
+2. Find the LAN IP of PC 1, for example with `ip addr`.
+
+3. Make sure PC 1 allows inbound traffic on port `12345`.
+
+4. On PC 2, run the client and pass PC 1's IP address:
+
+```bash
+cd assign2
+bash scripts/run_client.sh <PC1_IP>
+

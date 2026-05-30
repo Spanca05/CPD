@@ -17,8 +17,18 @@ public class ChatClient {
     private static final Object CONSOLE_LOCK = new Object();
 
     public static void main(String[] args) {
-        String host = "localhost";
+        String host = args.length > 0 && !args[0].isBlank() ? args[0] : "localhost";
         int port = 12345;
+
+        if (args.length > 1) {
+            try {
+                port = Integer.parseInt(args[1]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid port: " + args[1]);
+                System.err.println("Usage: client.ChatClient [host] [port]");
+                return;
+            }
+        }
 
         ClientConnection connection = new ClientConnection(host, port);
 
