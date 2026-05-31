@@ -2,7 +2,7 @@ package model;
 
 public class TokenInfo {
     private final String username;
-    private String currentRoomName;
+    private final String currentRoomName;
     private final long expiresAt;
 
     public TokenInfo(String username, String currentRoomName, long expiresAt) {
@@ -19,8 +19,8 @@ public class TokenInfo {
         return this.currentRoomName;
     }
 
-    public void setCurrentRoomName(String currentRoomName) {
-        this.currentRoomName = currentRoomName;
+    public long getExpiresAt() {
+        return this.expiresAt;
     }
 
     public boolean isExpired() {

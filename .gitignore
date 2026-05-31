@@ -10,5 +10,7 @@ __pycache__/
 *.o
 *.out
 
+*.txt
+*.jks
 
 

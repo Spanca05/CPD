@@ -4,6 +4,8 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.net.Socket;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import auth.AuthService;
 import auth.TokenService;
@@ -27,6 +29,7 @@ public class ClientHandler implements Runnable {
     private final TokenService tokenService;
     private String token;
     private final OllamaClient ollamaClient = OllamaClient.createDefault();
+    private final Lock outLock = new ReentrantLock();
 
     public ClientHandler(Socket clientSocket, RoomManager roomManager, AuthService authService,
             TokenService tokenService) {
@@ -37,17 +40,21 @@ public class ClientHandler implements Runnable {
     }
 
     public void sendMessage(String message) {
-        if (out != null) {
-            out.println(message);
+        outLock.lock();
+        try {
+            if (out != null) {
+                out.println(message);
+            }
+        } finally {
+            outLock.unlock();
         }
     }
 
     @Override
     public void run() {
         try (
-                Socket socket = clientSocket;
-                BufferedReader in = new BufferedReader(
-                        new InputStreamReader(socket.getInputStream()));) {
+        Socket socket = clientSocket;
+        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));) {
             out = new PrintWriter(socket.getOutputStream(), true);
 
             sendMessage("Welcome!");
@@ -132,7 +139,6 @@ public class ClientHandler implements Runnable {
             }
         }
     }
-
     private void handleHelp() {
         sendMessage("All commands:");
         sendMessage("/register <username> <password> - create account");
@@ -146,7 +152,19 @@ public class ClientHandler implements Runnable {
     }
 
     private void handleRooms() {
-        sendMessage("Available rooms: " + roomManager.listRooms());
+        String msg = "Available rooms:";
+        String roomMsg = "";
+        for (ChatRoom room : roomManager.getRooms()) {
+            roomMsg += room.getName();
+            if (room.isAiRoom()) {
+                roomMsg += " (ai room)";
+            }
+
+            msg += " " + roomMsg + " ";
+            roomMsg = "";
+        }
+
+        sendMessage(msg);
     }
 
     private void handleJoin(String roomName) {
@@ -158,7 +176,7 @@ public class ClientHandler implements Runnable {
 
         if (roomName == null || roomName.isBlank()) {
             sendMessage("Usage: /join <room-name>");
-            sendMessage("Available rooms: " + roomManager.listRooms());
+            handleRooms();
             return;
         }
 
@@ -189,13 +207,13 @@ public class ClientHandler implements Runnable {
     private void handleMessage(String message) {
         if (currentRoom == null) {
             sendMessage("You must join a room before sending messages. Use: /join <room-name>");
-            sendMessage("Available rooms: " + roomManager.listRooms());
+            handleRooms();
             return;
         }
 
         System.out
                 .println("From room: " + currentRoom.getName() + ", user: " + username + ", sent message: " + message);
-        currentRoom.broadcastExcept(username + ": " + message, this);
+        currentRoom.broadcastExcept("//USER//"+ username + ": " + message, this);
 
         if (currentRoom.isAiRoom()) {
             try {
@@ -246,39 +264,75 @@ public class ClientHandler implements Runnable {
     }
 
     private String extractResponseFromJson(String json) throws Exception {
-        int responseIdx = json.indexOf("\"response\":");
-        if (responseIdx < 0) {
-            throw new Exception("No response field in JSON");
-        }
+        if (json == null) throw new Exception("Empty JSON response");
 
-        int start = json.indexOf('"', responseIdx + 11);
-        if (start < 0) {
-            throw new Exception("Invalid JSON format");
-        }
+        String[] candidates = {"response", "text", "output", "content"};
 
-        int end = start + 1;
-        while (end < json.length()) {
-            if (json.charAt(end) == '"' && json.charAt(end - 1) != '\\') {
-                break;
+        for (String field : candidates) {
+            String val = extractJsonStringField(json, field);
+            if (val != null) {
+                return val.trim();
             }
-            end++;
         }
 
-        if (end >= json.length()) {
-            throw new Exception("Unclosed string in JSON");
+        throw new Exception("No response field in JSON");
+    }
+
+    private String extractJsonStringField(String json, String field) {
+        String key = '"' + field + '"';
+        int idx = json.indexOf(key);
+        if (idx < 0) return null;
+
+        int colon = json.indexOf(':', idx + key.length());
+        if (colon < 0) return null;
+
+        int i = colon + 1;
+        while (i < json.length() && Character.isWhitespace(json.charAt(i))) i++;
+        if (i >= json.length()) return null;
+
+        if (json.charAt(i) != '"') return null;
+
+        int start = i + 1;
+        int j = start;
+        while (j < json.length()) {
+            char c = json.charAt(j);
+            if (c == '"') {
+                int bs = 0;
+                int k = j - 1;
+                while (k >= start && json.charAt(k) == '\\') {
+                    bs++;
+                    k--;
+                }
+
+                if ((bs % 2) == 0) { // quote is not escaped
+                    String raw = json.substring(start, j);
+                    return unescapeJsonString(raw);
+                }
+            }
+            j++;
         }
 
-        String response = json.substring(start + 1, end);
+        return null;
+    }
 
-        response = response.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\");
-
-        return response.trim();
+    private String unescapeJsonString(String s) {
+        if (s == null) return null;
+        return s.replace("\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\r", "\r")
+                .replace("\\t", "\t")
+                .replace("\\\\", "\\");
     }
 
     private void handleQuit() {
         if (currentRoom != null) {
             currentRoom.removeClient(this);
             currentRoom = null;
+        }
+
+        if (token != null) {
+            tokenService.removeToken(token);
+            token = null;
         }
 
         sendMessage("Goodbye. See you next time :)");
@@ -368,6 +422,11 @@ public class ClientHandler implements Runnable {
 
         sendMessage("Logged out from " + username + ".");
 
+        if (token != null) {
+            tokenService.removeToken(token);
+            token = null;
+        }
+
         username = null;
         authenticated = false;
 
@@ -389,6 +448,7 @@ public class ClientHandler implements Runnable {
 
         authenticated = true;
         username = info.getUsername();
+        this.token = token;
 
         sendMessage("Reconnected as " + username);
 
