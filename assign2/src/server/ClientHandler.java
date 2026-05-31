@@ -139,7 +139,6 @@ public class ClientHandler implements Runnable {
             }
         }
     }
-
     private void handleHelp() {
         sendMessage("All commands:");
         sendMessage("/register <username> <password> - create account");
@@ -449,6 +448,7 @@ public class ClientHandler implements Runnable {
 
         authenticated = true;
         username = info.getUsername();
+        this.token = token;
 
         sendMessage("Reconnected as " + username);
 

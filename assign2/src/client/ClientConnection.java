@@ -4,18 +4,19 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import utils.SSLUtils;
 
+
 public class ClientConnection {
-    private static final Path TOKEN_DIR = Path.of(System.getProperty("user.home"));
+    private static final Path TOKEN_DIR = Path.of(System.getProperty("user.home"), ".cpd_chat_tokens");
 
     private final String host;
     private final int port;
+    private final String clientId;
     private final Path tokenFile;
 
     private Socket socket;
@@ -27,7 +28,8 @@ public class ClientConnection {
     public ClientConnection(String host, int port) {
         this.host = host;
         this.port = port;
-        this.tokenFile = buildTokenFilePath(host, port);
+        this.clientId = sanitizeForFileName(System.getProperty("cpd.clientId", String.valueOf(System.nanoTime())));
+        this.tokenFile = buildTokenFilePath(host, port, clientId);
         this.token = loadTokenFromDisk();
     }
 
@@ -127,23 +129,15 @@ public class ClientConnection {
                 return;
             }
 
+            Files.createDirectories(tokenFile.getParent());
             Files.writeString(tokenFile, token.trim(), StandardCharsets.UTF_8);
         } catch (IOException ignored) {
         }
     }
 
-    private Path buildTokenFilePath(String host, int port) {
-        String machineId = resolveMachineId();
+    private Path buildTokenFilePath(String host, int port, String clientId) {
         String endpointId = sanitizeForFileName(host + "_" + port);
-        return TOKEN_DIR.resolve(".cpd_chat_token_" + machineId + "_" + endpointId);
-    }
-
-    private String resolveMachineId() {
-        try {
-            return sanitizeForFileName(InetAddress.getLocalHost().getHostName());
-        } catch (IOException e) {
-            return sanitizeForFileName(System.getProperty("user.name", "user"));
-        }
+        return TOKEN_DIR.resolve("cpd_chat_token_" + clientId + "_" + endpointId + ".txt");
     }
 
     private String sanitizeForFileName(String value) {

@@ -18,7 +18,13 @@ rm -rf out || true
 mkdir -p out
 javac -d out $(find src -name "*.java")
 
+CLIENT_ID="$(tty 2>/dev/null | tr '/ ' '__' | tr -d '\n')"
+if [ -z "$CLIENT_ID" ] || [ "$CLIENT_ID" = "not_a_tty" ]; then
+  CLIENT_ID="$$"
+fi
+
 echo "Starting client with truststore $TRUSTSTORE_PATH"
 java -Djavax.net.ssl.trustStore="$TRUSTSTORE_PATH" \
   -Djavax.net.ssl.trustStorePassword="$STOREPASS" \
+  -Dcpd.clientId="$CLIENT_ID" \
   -cp out client.ChatClient "$@"
