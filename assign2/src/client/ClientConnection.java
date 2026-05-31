@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -11,10 +12,11 @@ import java.nio.file.Path;
 import utils.SSLUtils;
 
 public class ClientConnection {
-    private static final Path TOKEN_FILE = Path.of(System.getProperty("user.home"), ".cpd_chat_token");
+    private static final Path TOKEN_DIR = Path.of(System.getProperty("user.home"));
 
     private final String host;
     private final int port;
+    private final Path tokenFile;
 
     private Socket socket;
     private BufferedReader in;
@@ -25,6 +27,7 @@ public class ClientConnection {
     public ClientConnection(String host, int port) {
         this.host = host;
         this.port = port;
+        this.tokenFile = buildTokenFilePath(host, port);
         this.token = loadTokenFromDisk();
     }
 
@@ -98,15 +101,15 @@ public class ClientConnection {
         token = null;
 
         try {
-            Files.deleteIfExists(TOKEN_FILE);
+            Files.deleteIfExists(tokenFile);
         } catch (IOException ignored) {
         }
     }
 
     private String loadTokenFromDisk() {
         try {
-            if (Files.exists(TOKEN_FILE)) {
-                String stored = Files.readString(TOKEN_FILE, StandardCharsets.UTF_8).trim();
+            if (Files.exists(tokenFile)) {
+                String stored = Files.readString(tokenFile, StandardCharsets.UTF_8).trim();
                 if (!stored.isBlank()) {
                     return stored;
                 }
@@ -120,12 +123,30 @@ public class ClientConnection {
     private void persistToken(String token) {
         try {
             if (token == null || token.isBlank()) {
-                Files.deleteIfExists(TOKEN_FILE);
+                Files.deleteIfExists(tokenFile);
                 return;
             }
 
-            Files.writeString(TOKEN_FILE, token.trim(), StandardCharsets.UTF_8);
+            Files.writeString(tokenFile, token.trim(), StandardCharsets.UTF_8);
         } catch (IOException ignored) {
         }
+    }
+
+    private Path buildTokenFilePath(String host, int port) {
+        String machineId = resolveMachineId();
+        String endpointId = sanitizeForFileName(host + "_" + port);
+        return TOKEN_DIR.resolve(".cpd_chat_token_" + machineId + "_" + endpointId);
+    }
+
+    private String resolveMachineId() {
+        try {
+            return sanitizeForFileName(InetAddress.getLocalHost().getHostName());
+        } catch (IOException e) {
+            return sanitizeForFileName(System.getProperty("user.name", "user"));
+        }
+    }
+
+    private String sanitizeForFileName(String value) {
+        return value.replaceAll("[^A-Za-z0-9._-]", "_");
     }
 }

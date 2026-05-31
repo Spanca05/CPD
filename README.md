@@ -44,7 +44,9 @@ bash scripts/run_server.sh
 
 3. Make sure PC 1 allows inbound traffic on port `12345`.
 
-4. On PC 2, run the client and pass PC 1's IP address:
+4. Copy keystore.jks from PC 1 to PC 2.
+
+5. On PC 2, run the client and pass PC 1's IP address:
 
 ```bash
 cd assign2
