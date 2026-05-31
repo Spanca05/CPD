@@ -6,6 +6,7 @@ import java.util.Set;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
+import java.util.function.Function;
 
 public class ThreadSafeMap<K, V> {
     private final Map<K, V> map = new HashMap<>();
@@ -58,6 +59,27 @@ public class ThreadSafeMap<K, V> {
             }
 
             return value;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public V computeIfPresent(K key, Function<V, V> remappingFunction) {
+        lock.lock();
+        try {
+            V value = map.get(key);
+            if (value == null) {
+                return null;
+            }
+
+            V newValue = remappingFunction.apply(value);
+            if (newValue == null) {
+                map.remove(key);
+                return null;
+            } else {
+                map.put(key, newValue);
+                return newValue;
+            }
         } finally {
             lock.unlock();
         }

@@ -30,10 +30,10 @@ public class TokenService {
     }
 
     public void updateRoom(String token, String roomName) {
-        TokenInfo info = tokens.get(token);
-        if (info != null && !info.isExpired()) {
-            info.setCurrentRoomName(roomName);
-        }
+        tokens.computeIfPresent(token, info -> {
+            if (info.isExpired()) return null;
+            return new TokenInfo(info.getUsername(), roomName, info.getExpiresAt());
+        });
     }
 
     public void removeToken(String token) {
