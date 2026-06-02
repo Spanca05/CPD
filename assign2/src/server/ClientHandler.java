@@ -223,10 +223,11 @@ public class ClientHandler implements Runnable {
                 if (prompt != null && !prompt.isBlank()) {
                     ctx.append(prompt).append("\n");
                 } else {
-                    ctx.append("You are a helpful chat assistant called Bot. " +
-                            "Reply only as Bot. Do not generate messages for other users. " +
-                            "Do not continue the conversation beyond your single reply.\n");
+                    ctx.append("You are a helpful chat assistant called Bot. ");
                 }
+                ctx.append("Reply only as Bot in a single short paragraph. " +
+                        "Do not generate messages for other users. " +
+                        "Do not use asterisks for actions.\n");
 
                 for (String h : currentRoom.getHistory()) {
                     ctx.append(h).append("\n");
@@ -249,7 +250,10 @@ public class ClientHandler implements Runnable {
     private void submitAiRequest(ChatRoom room, String context) {
         ollamaClient.generate(context).thenAccept(resp -> {
             try {
-                String botResponse = extractResponseFromJson(resp);
+                String botResponse = extractResponseFromJson(resp)
+                        .replaceAll("\\*[^*]*\\*", "")  // remove *actions*
+                        .replaceAll("\\s*\\n+\\s*", " ") // collapse newlines
+                        .trim();
                 String botMsg = "Bot: " + botResponse;
                 room.broadcast(botMsg);
 
