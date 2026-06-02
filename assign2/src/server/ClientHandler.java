@@ -222,11 +222,16 @@ public class ClientHandler implements Runnable {
                 String prompt = currentRoom.getPrompt();
                 if (prompt != null && !prompt.isBlank()) {
                     ctx.append(prompt).append("\n");
+                } else {
+                    ctx.append("You are a helpful chat assistant called Bot. " +
+                            "Reply only as Bot. Do not generate messages for other users. " +
+                            "Do not continue the conversation beyond your single reply.\n");
                 }
 
                 for (String h : currentRoom.getHistory()) {
                     ctx.append(h).append("\n");
                 }
+                ctx.append("Bot:");
 
                 String context = ctx.toString();
                 ChatRoom room = currentRoom; // Capture room reference for async callback
